@@ -268,13 +268,15 @@ renderCUDA(
 	int W, int H,
 	const float2* __restrict__ points_xy_image,
 	const float* __restrict__ features,
+	const float* __restrict__ depths,
 	const float4* __restrict__ conic_opacity,
 	float* __restrict__ final_T,
 	uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
 	const float* __restrict__ depth,
-	float* __restrict__ out_depth, 
+	float* __restrict__ out_depth,
+	float* __restrict__ out_acc
 	float* __restrict__ out_opacity,
 	int * __restrict__ n_touched)
 {
@@ -310,6 +312,8 @@ renderCUDA(
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
 	float D = 0.0f;
+	float D_ = { 0 };
+	float A = {0};
 
 	// Iterate over batches until all done or range is complete
 	for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE)
@@ -366,6 +370,8 @@ renderCUDA(
 			}
 			D += collected_depth[j] * alpha * T;
 			// Keep track of how many pixels touched this Gaussian.
+			D_ += depths[collected_id[j]] * alpha * T;
+            A += alpha * T;
 			if (test_T > 0.5f) {
 				atomicAdd(&(n_touched[collected_id[j]]), 1);
 			}
@@ -386,6 +392,10 @@ renderCUDA(
 		for (int ch = 0; ch < CHANNELS; ch++) {
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
 		}
+		A += 1e-8;
+		out_depth[pix_id]= D_/A;
+        out_acc[pix_id] = A;
+
 		out_depth[pix_id] = D;
 		out_opacity[pix_id] = 1 - T;
 	}
